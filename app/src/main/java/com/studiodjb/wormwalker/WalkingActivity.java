@@ -3,13 +3,14 @@ package com.studiodjb.wormwalker;
 import android.Manifest;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.Location;
+import android.os.Bundle;
+import android.support.annotation.MainThread;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
-import android.os.Bundle;
-
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -27,8 +28,10 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolylineOptions;
 
 import java.text.DateFormat;
 import java.util.Date;
@@ -67,11 +70,13 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         mapFragment.getMapAsync(this);
     }
 
+    @Override
     protected void onStart() {
         mGoogleApiClient.connect();
         super.onStart();
     }
 
+    @Override
     protected void onStop() {
         mGoogleApiClient.disconnect();
         super.onStop();
@@ -89,10 +94,6 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         if (mGoogleApiClient.isConnected() && !mRequestingLocationUpdates) {
             startLocationUpdates();
         }
-    }
-
-    protected void stopLocationUpdates() {
-        LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
     }
 
     /**
@@ -148,6 +149,7 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
 
     }
 
+    @Override
     public void onSaveInstanceState(Bundle savedInstanceState) {
         savedInstanceState.putBoolean(REQUESTING_LOCATION_UPDATES_KEY, mRequestingLocationUpdates);
         savedInstanceState.putParcelable(LOCATION_KEY, mCurrentLocation);
@@ -156,7 +158,8 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
     }
 
     protected void startLocationUpdates() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             // TODO: Consider calling
             //    ActivityCompat#requestPermissions
             // here to request the missing permissions, and then overriding
@@ -172,18 +175,37 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         result.setResultCallback(this);
     }
 
-    private void updateUI() {
-        LatLng sydney = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
-        mMap.addMarker(new MarkerOptions().position(sydney).title("Last known"));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
-//        mLastUpdateTimeTextView.setText(mLastUpdateTime);
-    }
-
     @Override
     public void onLocationChanged(Location location) {
-        mCurrentLocation = location;
         mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
-        updateUI();
+        updateUI(location);
+    }
+
+    private void updateUI(Location location) {
+        if(mCurrentLocation == null){
+            mCurrentLocation = location;
+        }
+
+        LatLng current = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+        LatLng newLocation = new LatLng(location.getLatitude(), location.getLongitude());
+
+        mMap.addMarker(new MarkerOptions().position(newLocation).title("Last known"));
+        PolylineOptions lineOptions = new PolylineOptions();
+        lineOptions.add(current, newLocation).width(15).color(Color.RED);
+        mMap.addPolyline(lineOptions);
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(newLocation, 10));
+//        mMap.animateCamera(CameraUpdateFactory.zoomIn());
+
+//        CameraPosition cameraPosition = new CameraPosition.Builder()
+//                .target(newLocation)      // Sets the center of the map
+//                .zoom(17)                   // Sets the zoom
+//                .bearing( location.getBearing())                // Sets the orientation of the camera to east
+//                .tilt(30)                   // Sets the tilt of the camera to 30 degrees
+//                .build();                   // Creates a CameraPosition from the builder
+//        mMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+
+//        mLastUpdateTimeTextView.setText(mLastUpdateTime);
+        mCurrentLocation = location;
     }
 
     private void updateValuesFromBundle(Bundle savedInstanceState) {
@@ -208,15 +230,19 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
             if (savedInstanceState.keySet().contains(LAST_UPDATED_TIME_STRING_KEY)) {
                 mLastUpdateTime = savedInstanceState.getString(LAST_UPDATED_TIME_STRING_KEY);
             }
-            updateUI();
+            updateUI(mCurrentLocation);
         }
     }
 
-    protected void createLocationRequest() {
+    private void createLocationRequest() {
         mLocationRequest = new LocationRequest();
         mLocationRequest.setInterval(10000);
         mLocationRequest.setFastestInterval(5000);
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+    }
+
+    private void stopLocationUpdates() {
+        LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
     }
 
     @Override
@@ -245,13 +271,13 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
             case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
                 // Location settings are not satisfied, but this can be fixed
                 // by showing the user a dialog.
-//                try {
+                try {
                     // Show the dialog by calling startResolutionForResult(),
                     // and check the result in onActivityResult().
-//                    status.startResolutionForResult( OuterClass.this, REQUEST_CHECK_SETTINGS);
-//                } catch (IntentSender.SendIntentException e) {
+                    status.startResolutionForResult(this , 1000); //REQUEST_CHECK_SETTINGS
+                } catch (IntentSender.SendIntentException e) {
                     // Ignore the error.
-//                }
+                }
                 break;
             case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
                 // Location settings are not satisfied. However, we have no way

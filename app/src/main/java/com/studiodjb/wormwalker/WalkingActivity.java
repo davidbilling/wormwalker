@@ -1,16 +1,17 @@
 package com.studiodjb.wormwalker;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.location.Location;
 import android.os.Bundle;
-import android.support.annotation.MainThread;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
+import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -28,13 +29,14 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
-import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
 
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 public class WalkingActivity extends FragmentActivity implements OnMapReadyCallback, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, ResultCallback<LocationSettingsResult> {
 
@@ -48,6 +50,7 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
     private Location mCurrentLocation;
     private String mLastUpdateTime;
     private LocationRequest mLocationRequest;
+    private List<LatLng> myPath = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -115,6 +118,10 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
     }
 
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults){
+
+    }
+
     @Override
     public void onConnected(@Nullable Bundle bundle) {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
@@ -126,6 +133,11 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
             //                                          int[] grantResults)
             // to handle the case where the user grants the permission. See the documentation
             // for ActivityCompat#requestPermissions for more details.
+            String[] permissions = {Manifest.permission.ACCESS_FINE_LOCATION};
+            int MY_PERMISSIONS_REQUEST_READ_FINE_LOCATION = 1;
+            
+            ActivityCompat.requestPermissions(this, permissions, MY_PERMISSIONS_REQUEST_READ_FINE_LOCATION);
+            showToast("No permission OnConnected");
             return;
         }
 //        mCurrentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
@@ -167,6 +179,7 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
             //                                          int[] grantResults)
             // to handle the case where the user grants the permission. See the documentation
             // for ActivityCompat#requestPermissions for more details.
+            showToast("No permission, StartLocationUpdates");
             return;
         }
         createLocationRequest();
@@ -193,6 +206,7 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         PolylineOptions lineOptions = new PolylineOptions();
         lineOptions.add(current, newLocation).width(15).color(Color.RED);
         mMap.addPolyline(lineOptions);
+        myPath.add(newLocation);
         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(newLocation, 10));
 //        mMap.animateCamera(CameraUpdateFactory.zoomIn());
 
@@ -206,6 +220,20 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
 
 //        mLastUpdateTimeTextView.setText(mLastUpdateTime);
         mCurrentLocation = location;
+        checkIntersection(newLocation);
+    }
+
+    private void checkIntersection(LatLng myPosition){
+        if (com.google.maps.android.PolyUtil.isLocationOnEdge(myPosition, myPath, true)) {
+            showToast("Krock!!!");
+        }
+    }
+
+    private void showToast(String text){
+        Context context = getApplicationContext();
+        int duration = Toast.LENGTH_LONG;
+        Toast toast = Toast.makeText(context, text, duration);
+        toast.show();
     }
 
     private void updateValuesFromBundle(Bundle savedInstanceState) {
@@ -262,8 +290,13 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
                     //                                          int[] grantResults)
                     // to handle the case where the user grants the permission. See the documentation
                     // for ActivityCompat#requestPermissions for more details.
+                    showToast("No permission");
                     return;
                 }
+
+//                mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+//                mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, LOCATION_REFRESH_TIME, LOCATION_REFRESH_DISTANCE, mLocationListener);
+
                 LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
                 mRequestingLocationUpdates = true;
 
@@ -277,11 +310,13 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
                     status.startResolutionForResult(this , 1000); //REQUEST_CHECK_SETTINGS
                 } catch (IntentSender.SendIntentException e) {
                     // Ignore the error.
+                    showToast("Some error");
                 }
                 break;
             case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
                 // Location settings are not satisfied. However, we have no way
                 // to fix the settings so we won't show the dialog.
+                showToast("Unavailable");
                 break;
         }
     }

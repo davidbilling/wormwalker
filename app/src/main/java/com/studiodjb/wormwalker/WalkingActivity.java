@@ -1,30 +1,13 @@
 package com.studiodjb.wormwalker;
 
-import android.Manifest;
 import android.content.Context;
-import android.content.IntentSender;
-import android.content.pm.PackageManager;
+import android.content.Intent;
 import android.graphics.Color;
 import android.location.Location;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.widget.Toast;
 
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.PendingResult;
-import com.google.android.gms.common.api.ResultCallback;
-import com.google.android.gms.common.api.Status;
-import com.google.android.gms.location.LocationListener;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.LocationSettingsRequest;
-import com.google.android.gms.location.LocationSettingsResult;
-import com.google.android.gms.location.LocationSettingsStates;
-import com.google.android.gms.location.LocationSettingsStatusCodes;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -33,39 +16,29 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
 
-import java.text.DateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 
-public class WalkingActivity extends FragmentActivity implements OnMapReadyCallback, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, ResultCallback<LocationSettingsResult> {
-
-    private static final String REQUESTING_LOCATION_UPDATES_KEY = "LocationUpdateKey";
-    private static final String LOCATION_KEY = "LocationKey";
-    private static final String LAST_UPDATED_TIME_STRING_KEY = "LastUpdatedKey";
+public class WalkingActivity extends FragmentActivity implements OnMapReadyCallback {
 
     private GoogleMap mMap;
-    private GoogleApiClient mGoogleApiClient;
-    private boolean mRequestingLocationUpdates = true;
     private Location mCurrentLocation;
-    private String mLastUpdateTime;
-    private LocationRequest mLocationRequest;
     private List<LatLng> myPath = new ArrayList<>();
+    private static WalkingActivity mainActivityRunningInstance;
+    private Intent locationServiceIntent;
+
+    public static WalkingActivity  getInstance(){
+        return mainActivityRunningInstance;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Google maps api
-        if (mGoogleApiClient == null) {
-            mGoogleApiClient = new GoogleApiClient.Builder(this)
-                    .addConnectionCallbacks(this)
-                    .addOnConnectionFailedListener(this)
-                    .addApi(LocationServices.API)
-                    .build();
-        }
-
-        updateValuesFromBundle(savedInstanceState);
+        mainActivityRunningInstance = this;
+        // Start service
+        locationServiceIntent = new Intent(this, LocationService.class);
+        startService(locationServiceIntent);
 
         setContentView(R.layout.activity_walking);
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
@@ -75,28 +48,23 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
 
     @Override
     protected void onStart() {
-        mGoogleApiClient.connect();
         super.onStart();
     }
 
     @Override
     protected void onStop() {
-        mGoogleApiClient.disconnect();
+        stopService(locationServiceIntent);
         super.onStop();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        stopLocationUpdates();
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        if (mGoogleApiClient.isConnected() && !mRequestingLocationUpdates) {
-            startLocationUpdates();
-        }
     }
 
     /**
@@ -115,86 +83,15 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         // Add a marker in Sydney and move the camera
         LatLng sydney = new LatLng(-34, 151);
         mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
-    }
-
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults){
-
-    }
-
-    @Override
-    public void onConnected(@Nullable Bundle bundle) {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            String[] permissions = {Manifest.permission.ACCESS_FINE_LOCATION};
-            int MY_PERMISSIONS_REQUEST_READ_FINE_LOCATION = 1;
-            
-            ActivityCompat.requestPermissions(this, permissions, MY_PERMISSIONS_REQUEST_READ_FINE_LOCATION);
-            showToast("No permission OnConnected");
-            return;
-        }
-//        mCurrentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
-
-//        if (mCurrentLocation != null) {
-//            updateUI();
-//        }
-
-        if (mRequestingLocationUpdates) {
-            startLocationUpdates();
-        }
-    }
-
-    @Override
-    public void onConnectionSuspended(int i) {
-
-    }
-
-    @Override
-    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
-
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(sydney, 15));
     }
 
     @Override
     public void onSaveInstanceState(Bundle savedInstanceState) {
-        savedInstanceState.putBoolean(REQUESTING_LOCATION_UPDATES_KEY, mRequestingLocationUpdates);
-        savedInstanceState.putParcelable(LOCATION_KEY, mCurrentLocation);
-        savedInstanceState.putString(LAST_UPDATED_TIME_STRING_KEY, mLastUpdateTime);
         super.onSaveInstanceState(savedInstanceState);
     }
 
-    protected void startLocationUpdates() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            showToast("No permission, StartLocationUpdates");
-            return;
-        }
-        createLocationRequest();
-        LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder().addLocationRequest(mLocationRequest);
-        PendingResult<LocationSettingsResult> result = LocationServices.SettingsApi.checkLocationSettings(mGoogleApiClient, builder.build());
-        result.setResultCallback(this);
-    }
-
-    @Override
-    public void onLocationChanged(Location location) {
-        mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
-        updateUI(location);
-    }
-
-    private void updateUI(Location location) {
+    public void updateUI(Location location) {
         if(mCurrentLocation == null){
             mCurrentLocation = location;
         }
@@ -202,12 +99,10 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         LatLng current = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
         LatLng newLocation = new LatLng(location.getLatitude(), location.getLongitude());
 
-        mMap.addMarker(new MarkerOptions().position(newLocation).title("Last known"));
         PolylineOptions lineOptions = new PolylineOptions();
         lineOptions.add(current, newLocation).width(15).color(Color.RED);
         mMap.addPolyline(lineOptions);
-        myPath.add(newLocation);
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(newLocation, 10));
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(newLocation));
 //        mMap.animateCamera(CameraUpdateFactory.zoomIn());
 
 //        CameraPosition cameraPosition = new CameraPosition.Builder()
@@ -220,13 +115,18 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
 
 //        mLastUpdateTimeTextView.setText(mLastUpdateTime);
         mCurrentLocation = location;
-        checkIntersection(newLocation);
-    }
-
-    private void checkIntersection(LatLng myPosition){
-        if (com.google.maps.android.PolyUtil.isLocationOnEdge(myPosition, myPath, true)) {
+        if(checkIntersection(newLocation)){
+            mMap.addMarker(new MarkerOptions().position(newLocation).title("Someone lost here"));
             showToast("Krock!!!");
         }
+        myPath.add(newLocation);
+    }
+
+    private boolean checkIntersection(LatLng myPosition){
+        if (com.google.maps.android.PolyUtil.isLocationOnEdge(myPosition, myPath, true, 1)) {
+            return true;
+        }
+        return false;
     }
 
     private void showToast(String text){
@@ -234,90 +134,5 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
         int duration = Toast.LENGTH_LONG;
         Toast toast = Toast.makeText(context, text, duration);
         toast.show();
-    }
-
-    private void updateValuesFromBundle(Bundle savedInstanceState) {
-        if (savedInstanceState != null) {
-            // Update the value of mRequestingLocationUpdates from the Bundle, and
-            // make sure that the Start Updates and Stop Updates buttons are
-            // correctly enabled or disabled.
-            if (savedInstanceState.keySet().contains(REQUESTING_LOCATION_UPDATES_KEY)) {
-                mRequestingLocationUpdates = savedInstanceState.getBoolean(REQUESTING_LOCATION_UPDATES_KEY);
-//                setButtonsEnabledState();
-            }
-
-            // Update the value of mCurrentLocation from the Bundle and update the
-            // UI to show the correct latitude and longitude.
-            if (savedInstanceState.keySet().contains(LOCATION_KEY)) {
-                // Since LOCATION_KEY was found in the Bundle, we can be sure that
-                // mCurrentLocation is not null.
-                mCurrentLocation = savedInstanceState.getParcelable(LOCATION_KEY);
-            }
-
-            // Update the value of mLastUpdateTime from the Bundle and update the UI.
-            if (savedInstanceState.keySet().contains(LAST_UPDATED_TIME_STRING_KEY)) {
-                mLastUpdateTime = savedInstanceState.getString(LAST_UPDATED_TIME_STRING_KEY);
-            }
-            updateUI(mCurrentLocation);
-        }
-    }
-
-    private void createLocationRequest() {
-        mLocationRequest = new LocationRequest();
-        mLocationRequest.setInterval(10000);
-        mLocationRequest.setFastestInterval(5000);
-        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-    }
-
-    private void stopLocationUpdates() {
-        LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
-    }
-
-    @Override
-    public void onResult(@NonNull LocationSettingsResult locationSettingsResult) {
-        final Status status = locationSettingsResult.getStatus();
-        final LocationSettingsStates states = locationSettingsResult.getLocationSettingsStates();
-
-        switch (status.getStatusCode()) {
-            case LocationSettingsStatusCodes.SUCCESS:
-                // All location settings are satisfied. The client can
-                // initialize location requests here.
-                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                    // TODO: Consider calling
-                    //    ActivityCompat#requestPermissions
-                    // here to request the missing permissions, and then overriding
-                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                    //                                          int[] grantResults)
-                    // to handle the case where the user grants the permission. See the documentation
-                    // for ActivityCompat#requestPermissions for more details.
-                    showToast("No permission");
-                    return;
-                }
-
-//                mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-//                mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, LOCATION_REFRESH_TIME, LOCATION_REFRESH_DISTANCE, mLocationListener);
-
-                LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
-                mRequestingLocationUpdates = true;
-
-                break;
-            case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
-                // Location settings are not satisfied, but this can be fixed
-                // by showing the user a dialog.
-                try {
-                    // Show the dialog by calling startResolutionForResult(),
-                    // and check the result in onActivityResult().
-                    status.startResolutionForResult(this , 1000); //REQUEST_CHECK_SETTINGS
-                } catch (IntentSender.SendIntentException e) {
-                    // Ignore the error.
-                    showToast("Some error");
-                }
-                break;
-            case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
-                // Location settings are not satisfied. However, we have no way
-                // to fix the settings so we won't show the dialog.
-                showToast("Unavailable");
-                break;
-        }
     }
 }

@@ -129,7 +129,7 @@ public class LocationService extends Service implements
         mLocationRequest.setInterval(Constants.UPDATE_INTERVAL);
         // Set the fastest update interval to 1 second
         mLocationRequest.setFastestInterval(Constants.FASTEST_INTERVAL);
-//        mLocationRequest.setSmallestDisplacement(Constants.SMALLEST_DISPLACEMENT);
+        mLocationRequest.setSmallestDisplacement(Constants.SMALLEST_DISPLACEMENT);
 
         servicesAvailable = servicesConnected();
 

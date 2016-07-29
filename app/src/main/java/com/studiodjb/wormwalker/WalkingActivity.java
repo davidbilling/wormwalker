@@ -15,19 +15,22 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
+import com.google.maps.android.PolyUtil;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
 public class WalkingActivity extends FragmentActivity implements OnMapReadyCallback {
 
     private GoogleMap mMap;
     private Location mCurrentLocation;
-    private List<LatLng> myPath = new ArrayList<>();
+    protected List<LineStorage> myPath = new ArrayList<>();
     private static WalkingActivity mainActivityRunningInstance;
     private Intent locationServiceIntent;
 
-    public static WalkingActivity  getInstance(){
+    public static WalkingActivity getInstance() {
         return mainActivityRunningInstance;
     }
 
@@ -92,16 +95,19 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
     }
 
     public void updateUI(Location location) {
-        if(mCurrentLocation == null){
-            mCurrentLocation = location;
+        LatLng newLocation = new LatLng(location.getLatitude(), location.getLongitude());
+        LatLng current = null;
+        PolylineOptions lineOptions = new PolylineOptions();
+
+        if (mCurrentLocation == null) {
+            mMap.addMarker(new MarkerOptions().position(newLocation).title("Start here"));
+        } else {
+            current = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+
+            lineOptions.add(current, newLocation).width(15).color(Color.RED);
+            mMap.addPolyline(lineOptions);
         }
 
-        LatLng current = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
-        LatLng newLocation = new LatLng(location.getLatitude(), location.getLongitude());
-
-        PolylineOptions lineOptions = new PolylineOptions();
-        lineOptions.add(current, newLocation).width(15).color(Color.RED);
-        mMap.addPolyline(lineOptions);
         mMap.moveCamera(CameraUpdateFactory.newLatLng(newLocation));
 //        mMap.animateCamera(CameraUpdateFactory.zoomIn());
 
@@ -115,21 +121,80 @@ public class WalkingActivity extends FragmentActivity implements OnMapReadyCallb
 
 //        mLastUpdateTimeTextView.setText(mLastUpdateTime);
         mCurrentLocation = location;
-        if(checkIntersection(newLocation)){
+        if (checkIntersection(lineOptions.getPoints())) {
             mMap.addMarker(new MarkerOptions().position(newLocation).title("Someone lost here"));
             showToast("Krock!!!");
         }
-        myPath.add(newLocation);
+
+        if (current != null) {
+            LineStorage path = new LineStorage();
+            path.Start = current;
+            path.Stop = newLocation;
+            path.AddTime = new Date();
+            myPath.add(path);
+        }
     }
 
-    private boolean checkIntersection(LatLng myPosition){
-        if (com.google.maps.android.PolyUtil.isLocationOnEdge(myPosition, myPath, true, 1)) {
-            return true;
+    protected boolean checkIntersection(List<LatLng> linePoints) {
+        if (myPath.isEmpty()) {
+            return false;
+        }
+
+        double step = 0.00001;
+        double x1, x2, y1, y2, m, c, x, y;
+        Double M;
+        x1 = linePoints.get(0).latitude;
+        y1 = linePoints.get(0).longitude;
+        x2 = linePoints.get(1).latitude;
+        y2 = linePoints.get(1).longitude;
+        m = (y1 - y2) / (x1 - x2);
+        M = m;
+        c = y1 - x1 * m;
+        if (m == 0 || M.isInfinite()) {
+            m = 0.0;
+            c = y1;
+        }
+
+        Collections.sort(myPath, new LineStorageDateSort());
+
+        for (LineStorage line : myPath) {
+            List<LatLng> path = new ArrayList<>();
+            path.add(line.Start);
+            path.add(line.Stop);
+
+            if (x1 != x2) {
+                if( x2 < x1){
+                    double tmpX = x2;
+                    x2 = x1;
+                    x1 = tmpX;
+                }
+                for (x = x1 + step; x < x2; x = x + step) {
+                    y = m * x + c;
+                    LatLng point = new LatLng(x, y);
+//                    mMap.addMarker(new MarkerOptions().position(point).title(String.valueOf(x)));
+                    if (PolyUtil.isLocationOnPath(point, path, true, 0.1)) {
+                        return true;
+                    }
+                }
+            } else {
+                if( y2 < y1){
+                    double tmpY = y2;
+                    y2 = y1;
+                    y1 = tmpY;
+                }
+                for (y = y1 + step; y < y2; y = y + step) {
+                    LatLng point = new LatLng(x1, y);
+//                    mMap.addMarker(new MarkerOptions().position(point).title(String.valueOf(y)));
+                    if (PolyUtil.isLocationOnPath(point, path, true, 0.1)) {
+                        return true;
+                    }
+                }
+            }
         }
         return false;
     }
 
-    private void showToast(String text){
+    private void showToast(String text) {
         Context context = getApplicationContext();
         int duration = Toast.LENGTH_LONG;
         Toast toast = Toast.makeText(context, text, duration);
